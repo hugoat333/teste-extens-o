@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Rastreador de Comunidades</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="header">
+    <div class="brand">
+      <span class="logo">◎</span>
+      <div>
+        <h1>Rastreador de Comunidades</h1>
+        <p id="status" class="status">Pronto para escanear</p>
+      </div>
+    </div>
+    <div class="counter" title="Total de grupos encontrados">
+      <span id="count">0</span>
+      <small>grupos</small>
+    </div>
+  </header>
+
+  <section class="stats" id="stats">
+    <span class="stat" data-platform="WhatsApp">WhatsApp <b>0</b></span>
+    <span class="stat" data-platform="Telegram">Telegram <b>0</b></span>
+    <span class="stat" data-platform="Discord">Discord <b>0</b></span>
+    <span class="stat" data-platform="Facebook">Facebook <b>0</b></span>
+  </section>
+
+  <div class="search">
+    <input id="search" type="search" placeholder="Filtrar por nome, URL ou plataforma..." autocomplete="off">
+  </div>
+
+  <div class="actions">
+    <button id="scanBtn" class="btn primary">Escanear Página</button>
+    <button id="copyAllBtn" class="btn">Copiar Todos</button>
+    <button id="exportBtn" class="btn">Exportar CSV</button>
+  </div>
+
+  <div class="toolbar">
+    <label class="toggle">
+      <input id="accumulate" type="checkbox" checked>
+      <span>Acumular entre páginas</span>
+    </label>
+    <button id="clearBtn" class="link-btn">Limpar lista</button>
+  </div>
+
+  <main id="results" class="results"></main>
+
+  <template id="itemTemplate">
+    <article class="item">
+      <div class="item-top">
+        <span class="badge"></span>
+        <button class="btn small copy-btn">Copiar</button>
+      </div>
+      <p class="title"></p>
+      <a class="url" target="_blank" rel="noopener noreferrer"></a>
+    </article>
+  </template>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Rastreador de Comunidades",
+  "version": "1.0.0",
+  "description": "Escaneia a página atual e extrai links de convite de grupos (WhatsApp, Telegram, Discord e Facebook).",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Rastreador de Comunidades"
+  }
+}
