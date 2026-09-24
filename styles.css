@@ -124,6 +124,36 @@ h1 { font-size: 14px; font-weight: 600; }
 .btn.small { padding: 4px 10px; font-size: 11px; }
 .btn.copied { background: var(--success); border-color: var(--success); color: #0b1a10; }
 
+/* Rolagem automática */
+.autoscroll {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  padding: 8px 16px 0;
+}
+.autoscroll select {
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+}
+.autoscroll select:focus { border-color: var(--accent); }
+.autoscroll select:disabled { opacity: .5; cursor: not-allowed; }
+.btn.accent { border-color: #9b6cff; color: #c9b3ff; }
+.btn.accent:hover { background: #2a2140; }
+.btn.danger { background: var(--danger); border-color: var(--danger); color: #2a0b0b; }
+.btn.danger:hover { background: #ff8585; }
+
+.hint {
+  margin: 6px 16px 0;
+  font-size: 11px;
+  color: #c9b3ff;
+}
+
 .toolbar {
   display: flex; align-items: center; justify-content: space-between;
   padding: 8px 16px;

@@ -37,6 +37,18 @@
     <button id="exportBtn" class="btn">Exportar CSV</button>
   </div>
 
+  <div class="autoscroll">
+    <button id="autoScrollBtn" class="btn accent">Rolar e Escanear</button>
+    <select id="scrollDuration" title="Tempo máximo de rolagem">
+      <option value="30">30 s</option>
+      <option value="60" selected>1 min</option>
+      <option value="180">3 min</option>
+      <option value="300">5 min</option>
+      <option value="600">10 min</option>
+    </select>
+  </div>
+  <p id="scrollHint" class="hint" hidden>Mantenha este popup aberto: clicar fora dele interrompe a rolagem (o que já foi achado fica salvo).</p>
+
   <div class="toolbar">
     <label class="toggle">
       <input id="accumulate" type="checkbox" checked>

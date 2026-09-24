@@ -9,6 +9,9 @@ const els = {
   results: $('#results'),
   stats: $('#stats'),
   scanBtn: $('#scanBtn'),
+  autoScrollBtn: $('#autoScrollBtn'),
+  scrollDuration: $('#scrollDuration'),
+  scrollHint: $('#scrollHint'),
   copyAllBtn: $('#copyAllBtn'),
   exportBtn: $('#exportBtn'),
   clearBtn: $('#clearBtn'),
@@ -175,33 +178,46 @@ function render() {
 
 // ---------- Scan ----------
 
-async function scanPage() {
+let autoScrollRunning = false;
+let stopRequested = false;
+
+async function getScannableTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab || !tab.id) {
     setStatus('Nenhuma aba ativa encontrada', 'error');
-    return;
+    return null;
   }
   if (!/^https?:|^file:/i.test(tab.url || '')) {
     setStatus('Esta página não pode ser escaneada (página interna do navegador)', 'error');
-    return;
+    return null;
   }
+  return tab;
+}
 
-  els.scanBtn.disabled = true;
+// Injeta o content.js em todos os frames e junta os resultados.
+async function collectFromTab(tabId) {
+  // allFrames: pega também links dentro de iframes (embeds, widgets de fórum).
+  const injections = await chrome.scripting.executeScript({
+    target: { tabId, allFrames: true },
+    files: ['content.js']
+  });
+  const found = [];
+  for (const inj of injections) {
+    if (inj && inj.result && Array.isArray(inj.result.items)) found.push(...inj.result.items);
+  }
+  return found;
+}
+
+async function scanPage() {
+  const tab = await getScannableTab();
+  if (!tab) return;
+
+  setBusy(true);
   els.scanBtn.textContent = 'Escaneando...';
   setStatus('Varrendo a página...');
 
   try {
-    // allFrames: pega também links dentro de iframes (embeds, widgets de fórum).
-    const injections = await chrome.scripting.executeScript({
-      target: { tabId: tab.id, allFrames: true },
-      files: ['content.js']
-    });
-
-    const found = [];
-    for (const inj of injections) {
-      if (inj && inj.result && Array.isArray(inj.result.items)) found.push(...inj.result.items);
-    }
-
+    const found = await collectFromTab(tab.id);
     if (!els.accumulate.checked) groups = [];
     const added = mergeGroups(found, tab.url);
     await saveGroups();
@@ -218,9 +234,142 @@ async function scanPage() {
     console.error(err);
     setStatus('Erro ao escanear: ' + (err.message || err), 'error');
   } finally {
-    els.scanBtn.disabled = false;
-    els.scanBtn.textContent = 'Escanear Página';
+    setBusy(false);
   }
+}
+
+// Executada DENTRO da página: rola até o fim e espera novo conteúdo carregar.
+// Retorna { grew } indicando se a página cresceu (carregou mais itens).
+async function scrollStepInPage(waitMs) {
+  // Alguns sites (Discord, parte do Facebook) rolam um container interno em vez da janela.
+  function findScroller() {
+    const root = document.scrollingElement || document.documentElement;
+    if (root.scrollHeight > root.clientHeight + 50) return root;
+    let best = null;
+    let bestArea = 0;
+    for (const el of document.querySelectorAll('div, main, section, ul')) {
+      if (el.scrollHeight <= el.clientHeight + 50) continue;
+      const style = getComputedStyle(el);
+      if (!/(auto|scroll)/.test(style.overflowY)) continue;
+      const area = el.clientWidth * el.clientHeight;
+      if (area > bestArea) { best = el; bestArea = area; }
+    }
+    return best || root;
+  }
+
+  // Assinatura do conteúdo: detecta carga nova mesmo quando o site remove itens antigos
+  // e a altura total não muda (listas virtualizadas).
+  const signature = (el) => `${el.scrollHeight}|${(el.lastElementChild || el).textContent.length}|${document.body.textContent.length}`;
+
+  const scroller = findScroller();
+  const before = signature(scroller);
+  scroller.scrollTo({ top: scroller.scrollHeight, behavior: 'instant' });
+  window.scrollTo(0, document.documentElement.scrollHeight);
+
+  const deadline = Date.now() + waitMs;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 250));
+    if (signature(scroller) !== before) {
+      // Dá um tempo extra para o conteúdo novo terminar de renderizar.
+      await new Promise((r) => setTimeout(r, 400));
+      return { grew: true };
+    }
+  }
+  return { grew: false };
+}
+
+async function autoScrollAndScan() {
+  if (autoScrollRunning) {
+    stopRequested = true;
+    els.autoScrollBtn.textContent = 'Parando...';
+    return;
+  }
+
+  const tab = await getScannableTab();
+  if (!tab) return;
+
+  const maxSeconds = Number(els.scrollDuration.value) || 60;
+  const deadline = Date.now() + maxSeconds * 1000;
+  const MAX_IDLE_STEPS = 4; // para se a página não carregar nada novo por 4 tentativas seguidas
+
+  autoScrollRunning = true;
+  stopRequested = false;
+  setBusy(true);
+  els.autoScrollBtn.disabled = false;
+  els.autoScrollBtn.textContent = 'Parar';
+  els.autoScrollBtn.classList.add('danger');
+  els.scrollHint.hidden = false;
+
+  if (!els.accumulate.checked) groups = [];
+  const seenThisRun = new Set();
+  let totalAdded = 0;
+  let idleSteps = 0;
+  let step = 0;
+  let reason = 'tempo esgotado';
+
+  try {
+    while (Date.now() < deadline) {
+      if (stopRequested) { reason = 'interrompido'; break; }
+
+      // Escaneia a cada passo: sites como o Facebook removem posts antigos do DOM ao rolar.
+      const found = await collectFromTab(tab.id);
+      found.forEach((f) => seenThisRun.add(f.url));
+      const added = mergeGroups(found, tab.url);
+      totalAdded += added;
+      if (added) {
+        await saveGroups();
+        render();
+      }
+
+      const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setStatus(`Rolando... ${seenThisRun.size} achado(s) · ${totalAdded} novo(s) · ${remaining}s`, 'ok');
+
+      if (stopRequested) { reason = 'interrompido'; break; }
+
+      const [res] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: scrollStepInPage,
+        args: [2500]
+      });
+      step++;
+
+      if ((res && res.result && res.result.grew) || added > 0) {
+        idleSteps = 0;
+      } else if (++idleSteps >= MAX_IDLE_STEPS) {
+        reason = 'fim da página';
+        break;
+      }
+    }
+
+    // Varredura final para pegar o que carregou no último passo.
+    const found = await collectFromTab(tab.id);
+    found.forEach((f) => seenThisRun.add(f.url));
+    totalAdded += mergeGroups(found, tab.url);
+    await saveGroups();
+    render();
+
+    setStatus(`Concluído (${reason}) · ${step} rolagens · ${seenThisRun.size} achado(s) · ${totalAdded} novo(s)`, 'ok');
+  } catch (err) {
+    console.error(err);
+    await saveGroups();
+    render();
+    setStatus('Erro na rolagem: ' + (err.message || err), 'error');
+  } finally {
+    autoScrollRunning = false;
+    stopRequested = false;
+    els.autoScrollBtn.textContent = 'Rolar e Escanear';
+    els.autoScrollBtn.classList.remove('danger');
+    els.scrollHint.hidden = true;
+    setBusy(false);
+  }
+}
+
+function setBusy(busy) {
+  els.scanBtn.disabled = busy;
+  els.autoScrollBtn.disabled = busy && !autoScrollRunning;
+  els.scrollDuration.disabled = busy;
+  els.clearBtn.disabled = busy;
+  if (!busy) els.scanBtn.textContent = 'Escanear Página';
 }
 
 // ---------- CSV ----------
@@ -262,6 +411,7 @@ function exportCSV() {
 // ---------- Eventos ----------
 
 els.scanBtn.addEventListener('click', scanPage);
+els.autoScrollBtn.addEventListener('click', autoScrollAndScan);
 
 els.copyAllBtn.addEventListener('click', async () => {
   const rows = getFiltered();
